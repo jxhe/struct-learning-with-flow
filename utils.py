@@ -19,6 +19,9 @@ class ConllSent(object):
     def __len__(self):
         return len(self.sent_dict["word"])
 
+    def get(key):
+        return self.sent_dict[key]
+
 def is_number(s):
     try:
         float(s)
@@ -193,3 +196,14 @@ def generate_seed(data, size, shuffle=True):
 
     # seed.sort(key=lambda e: -len(e))
     return seed
+
+def get_tag_set(tag_list):
+    tag_set = set()
+    tag_set.update([x for s in tag_list for x in s])
+    return tag_set
+
+def stable_log(val, default_val=-1e20):
+    if val == 0:
+        return default_val
+
+    return math.log(val)
