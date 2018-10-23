@@ -20,13 +20,13 @@ The code performs unsupervised structure learning with flow, specifically on Mar
 ### Data
 We use simplified CoNLL format as data input that contains four columns:
 ```
-Token GoldTag PredTag Head
+ID Token GoldTag PredTag Head
 ```
 At training time only `Token` is used, `GoldTag` is used at testing time for evaluation. `PredTag` is the predicted unsupervised tags (for prediction), and `Head` represents the dependency head index (for evaluation of parsing task). Both `PredTag` and `Head` are not read in tagging task, we include them for consistency only.
 
 As observations in our generative model, pre-trained word vectors are required. The input word vector map should be a pickled representation of Python dict object, but other formats of word vectors can also be read by easily modifying `markov_train.py`. 
 
-We provide the pre-trained word vector file we used in the paper and a small subset of Penn Treebank data ([HERE](https://drive.google.com/open?id=1EXkzGjKnbIVUhVvI9wquSvp5B8gK4frX)) for testing the code. This dataset contains 10% samples of Penn Treebank and is public in [NLTK corpus](http://www.nltk.org/howto/corpus.html). Full Penn Treebank dataset requires a LDC license.
+We provide the pre-trained word vector file we used in the paper and a small subset of Penn Treebank data ([HERE](https://drive.google.com/open?id=17Wh-J4_n4V6d6Fpn2apYcRJC1Fz_ryX1)) for testing the code. This dataset contains 10% samples of Penn Treebank and is public in [NLTK corpus](http://www.nltk.org/howto/corpus.html). Full Penn Treebank dataset requires a LDC license.
 
 ### Training
 
