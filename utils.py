@@ -91,16 +91,16 @@ def read_conll(fname, rm_null=True, prc_num=True):
         for line in fin:
             if line != '\n':
                 line = line.strip().split('\t')
-                if rm_null and line[1] == '-NONE-':
+                sent["head"].append(line[4])
+                if rm_null and line[2] == '-NONE-':
                     null_sent.append(loc)
                 else:
-                    sent["gold_tag"].append(line[1])
-                    sent["pred_tag"].append(line[2])
-                    sent["head"].append(line[3])
-                    if prc_num and is_number(line[0]):
+                    sent["gold_tag"].append(line[2])
+                    sent["pred_tag"].append(line[3])
+                    if prc_num and is_number(line[1]):
                         sent["word"].append('0')
                     else:
-                        sent["word"].append(line[0])
+                        sent["word"].append(line[1])
 
                 loc += 1
             else:
@@ -121,16 +121,16 @@ def write_conll(fname, sentences, pred_tags, null_total):
             word_list = sent["word"]
             head_list = sent["head"]
             length = len(sent) + len(null_sent)
+            assert (length == len(head_list))
             pred_tag_list = [str(k.item()) for k in pred]
             for null in null_sent:
                 pred_tag_list.insert(null, '-NONE-')
                 gold_tag_list.insert(null, '-NONE-')
                 word_list.insert(null, '-NONE-')
-                head_list.insert(null, 'x')
 
             for i in range(length):
-                fout.write("%s\t%s\t%s\t%s\n" %
-                    (word_list[i], gold_tag_list[i],
+                fout.write("%d\t%s\t%s\t%s\t%s\n" %
+                    (i+1, word_list[i], gold_tag_list[i],
                      pred_tag_list[i], head_list[i]))
             fout.write('\n')
 
