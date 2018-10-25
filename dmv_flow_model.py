@@ -110,7 +110,7 @@ class DMVFlow(nn.Module):
                              ((flat_sents - seed_mean.expand_as(flat_sents)) ** 2),
                              dim=0) / masks.sum()
 
-        self.var.copy_ = seed_var
+        self.var.copy_(seed_var)
         self.init_mean(train_tagid, train_emb)
 
         load_model = pickle.load(open(self.args.load_viterbi_dmv, 'rb'))
@@ -194,7 +194,7 @@ class DMVFlow(nn.Module):
             res.update(self._tree_to_depset(start, end, 2, batch, root_max_index[batch, 0],
                                             root_max_index[batch, 1]))
             assert len(res) == sent_len[batch]
-            dep_list += [depset.DepSet(sent_len[batch], sorted(res))]
+            dep_list += [sorted(res)]
 
         return dep_list
 
@@ -212,14 +212,17 @@ class DMVFlow(nn.Module):
                 assert right_child[3] == 1
                 arg = left_child[-1]
             res = set([(arg, index)])
-            res.update(self._tree_to_depset(left_child[1], left_child[2], left_child[3], \
-                                           batch, left_child[4], left_child[5]), \
-                       self._tree_to_depset(right_child[1], right_child[2], right_child[3], \
-                                           batch, right_child[4], right_child[5]))
+            res.update(self._tree_to_depset(left_child[1].item(), left_child[2].item(),
+                                            left_child[3].item(), batch, left_child[4].item(),
+                                            left_child[5].item()), \
+                       self._tree_to_depset(right_child[1].item(), right_child[2].item(),
+                                            right_child[3].item(), batch, right_child[4].item(),
+                                            right_child[5].item()))
 
         elif left_child[0] == 1 and right_child[0] == 0:
-            res = self._tree_to_depset(left_child[1], left_child[2], left_child[3], \
-                                      batch, left_child[4], left_child[5])
+            res = self._tree_to_depset(left_child[1].item(), left_child[2].item(),
+                                       left_child[3].item(), batch, left_child[4].item(),
+                                       left_child[5].item())
         elif left_child[0] == -1 and right_child[0] == -1:
             res = set()
 
@@ -247,9 +250,9 @@ class DMVFlow(nn.Module):
         else:
             batch_size = self.args.batch_size
 
-        for sents, gold_batch in data_iter(list(zip(test_emb, gold)), 
+        for sents, gold_batch in data_iter(list(zip(test_emb, gold)),
                                            batch_size=batch_size,
-                                           is_test=True, 
+                                           is_test=True,
                                            shuffle=False):
 
             if all_len:
@@ -261,12 +264,12 @@ class DMVFlow(nn.Module):
                 sents_var = sents_var.transpose(0, 1)
                 # root_max_index: (batch_size, num_state, seq_length)
                 batch_size, seq_length, _ = sents_var.size()
-                symbol_index_t = self.attach_left.new_tensor([[[p, q] for q in range(seq_length)] \
+                symbol_index_t = self.attach_left.new([[[p, q] for q in range(seq_length)] \
                                                       for p in range(self.num_state)]) \
                                                       .expand(batch_size, self.num_state, seq_length, 2)
                 root_max_index = self.dep_parse(sents_var, masks, symbol_index_t)
                 batch_size = masks.size(1)
-                sent_len = [torch.sum(masks[:, i]) for i in range(batch_size)]
+                sent_len = [torch.sum(masks[:, i]).item() for i in range(batch_size)]
                 parse = self.tree_to_depset(root_max_index, sent_len)
             except RuntimeError:
                 memory_sent_cnt += 1
@@ -275,7 +278,7 @@ class DMVFlow(nn.Module):
 
             for gold_s, parse_s in zip(gold_batch, parse):
                 assert len(gold_s) == len(parse_s)
-                # assert gold_s.length > 1
+                length = len(gold_s)
                 if len(gold_s) > 1:
                     (directed, undirected) = self.measures(gold_s, parse_s)
                     cnt += length
@@ -371,22 +374,13 @@ class DMVFlow(nn.Module):
         self.log_p_inside = {}
         # n = len(s)
 
-        #TODO(junxian): batch sentences
         batch_size, seq_length, _ = sents.size()
-
-        # if self.args.cuda:
-        #     unary_index = torch.cuda.LongTensor(self.num_state, seq_length).zero_()
-        # else:
-        #     unary_index = torch.LongTensor(self.num_state, seq_length).zero_()
 
         for i in range(seq_length):
             j = i + 1
-            if self.args.cuda:
-                cat_var = [Variable(torch.cuda.FloatTensor(batch_size, self.num_state, 1) \
-                           .fill_(NEG_INFINITY)) for _ in range(seq_length)]
-            else:
-                cat_var = [Variable(torch.FloatTensor(batch_size, self.num_state, 1) \
-                           .fill_(NEG_INFINITY)) for _ in range(seq_length)]
+            cat_var = [torch.zeros((batch_size, self.num_state, 1),
+                    dtype=torch.float32,
+                    device=self.device).fill_(NEG_INFINITY) for _ in range(seq_length)]
 
             cat_var[i] = density[:, i, :].unsqueeze(dim=2)
             self.log_p_inside[i, j, 0] = torch.cat(cat_var, dim=2)
@@ -402,10 +396,7 @@ class DMVFlow(nn.Module):
         log_stop_left = self.log_stop_left[0].view(1, 1, 1, self.num_state, 2) \
                      .expand(batch_size, self.num_state, seq_length, self.num_state, 2)
 
-        if self.args.cuda:
-            index = torch.cuda.LongTensor(ep_size).zero_()
-        else:
-            index = torch.LongTensor(ep_size).zero_()
+        index = torch.zeros(ep_size, dtype=torch.long, device=self.device)
         #TODO(junxian): ideally, only the l loop is needed
         # but eliminate the rest loops would be a bit hard
         for l in range(2, seq_length+1):
@@ -424,9 +415,8 @@ class DMVFlow(nn.Module):
                                 .expand(ep_size)
 
 
-                    index.zero_()
                     index[:, :, k-1, :, :].fill_(1)
-                    index_var = Variable(index)
+                    index_var = index.clone()
                     log_stop_right_gather = torch.gather(log_stop_right, 2, index_var)
 
                     # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_right[0, m==k-1, i]
@@ -449,7 +439,7 @@ class DMVFlow(nn.Module):
                     index.zero_()
 
                     index[:, :, :, :, k].fill_(1)
-                    index_var = Variable(index)
+                    index_var = index.clone()
                     log_stop_left_gather = torch.gather(log_stop_left, 4, index_var)
 
                     # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_left[0, n==k, j]
@@ -475,7 +465,7 @@ class DMVFlow(nn.Module):
         sent_len_t = masks.sum(dim=0).detach()
         log_p_sum = []
         for i in range(batch_size):
-            sent_len = sent_len_t[i]
+            sent_len = sent_len_t[i].item()
             log_p_sum += [self.log_p_inside[0, sent_len, 2][i].unsqueeze(dim=0)]
         log_p_sum_cat = torch.cat(log_p_sum, dim=0)
 
@@ -527,19 +517,13 @@ class DMVFlow(nn.Module):
         ep_size = torch.Size([batch_size, self.num_state, seq_length, \
                               self.num_state, seq_length])
 
-        if self.args.cuda:
-            index = torch.cuda.LongTensor(ep_size).zero_()
-        else:
-            index = torch.LongTensor(ep_size).zero_()
+        index = torch.zeros(ep_size, dtype=torch.long, device=self.device)
 
         for i in range(seq_length):
             j = i + 1
-            if self.args.cuda:
-                cat_var = [torch.cuda.FloatTensor(batch_size, self.num_state, 1).fill_(NEG_INFINITY) \
-                           for _ in range(seq_length)]
-            else:
-                cat_var = [torch.FloatTensor(batch_size, self.num_state, 1).fill_(NEG_INFINITY) \
-                           for _ in range(seq_length)]
+            cat_var = [torch.zeros((batch_size, self.num_state, 1),
+                    dtype=torch.float32,
+                    device=self.device).fill_(NEG_INFINITY) for _ in range(seq_length)]
             cat_var[i] = density[:, i, :].unsqueeze(dim=2)
             self.log_p_parse[i, j, 0] = torch.cat(cat_var, dim=2)
             self.left_child[i, j, 0] = index.new(batch_size, self.num_state, seq_length, 6) \
@@ -679,7 +663,7 @@ class DMVFlow(nn.Module):
         log_p_sum = []
         sent_len_t = masks.sum(dim=0)
         for i in range(batch_size):
-            sent_len = sent_len_t[i]
+            sent_len = sent_len_t[i].item()
             log_p_sum += [self.log_p_parse[0, sent_len, 2][i].unsqueeze(dim=0)]
         log_p_sum_cat = torch.cat(log_p_sum, dim=0)
         log_root = log_p_sum_cat + self.log_root_attach_left.view(1, self.num_state, 1) \
@@ -696,18 +680,18 @@ class DMVFlow(nn.Module):
         non_stop_mark = self.log_p_inside[i, j, 0]
         log_stop_left = self.log_stop_left[1].expand(batch_size, self.num_state, 2)
         log_stop_right = self.log_stop_right[1].expand(batch_size, self.num_state, 2)
-        if self.args.cuda:
-            index_ladj = torch.cuda.LongTensor(batch_size, self.num_state, seq_length).zero_()
-            index_radj = torch.cuda.LongTensor(batch_size, self.num_state, seq_length).zero_()
-        else:
-            index_ladj = torch.LongTensor(batch_size, self.num_state, seq_length).zero_()
-            index_radj = torch.LongTensor(batch_size, self.num_state, seq_length).zero_()
+
+        index_ladj = torch.zeros((batch_size, self.num_state, seq_length),
+                dtype=torch.long,
+                device=self.device,
+                requires_grad=False)
+        index_radj = torch.zeros((batch_size, self.num_state, seq_length),
+                dtype=torch.long,
+                device=self.device,
+                requires_grad=False)
 
         index_ladj[:, :, i].fill_(1)
         index_radj[:, :, j-1].fill_(1)
-
-        index_ladj = Variable(index_ladj)
-        index_radj = Variable(index_radj)
 
         log_stop_right = torch.gather(log_stop_right, 2, index_radj)
         inter_right_stop_mark = non_stop_mark + log_stop_right
@@ -733,12 +717,14 @@ class DMVFlow(nn.Module):
         log_stop_left = self.log_stop_left[1].expand(batch_size, self.num_state, 2)
         log_stop_right = self.log_stop_right[1].expand(batch_size, self.num_state, 2)
 
-        if self.args.cuda:
-            index_ladj = torch.cuda.LongTensor(batch_size, self.num_state, seq_length).zero_()
-            index_radj = torch.cuda.LongTensor(batch_size, self.num_state, seq_length).zero_()
-        else:
-            index_ladj = torch.LongTensor(batch_size, self.num_state, seq_length).zero_()
-            index_radj = torch.LongTensor(batch_size, self.num_state, seq_length).zero_()
+        index_ladj = torch.zeros((batch_size, self.num_state, seq_length),
+                dtype=torch.long,
+                device=self.device,
+                requires_grad=False)
+        index_radj = torch.zeros((batch_size, self.num_state, seq_length),
+                dtype=torch.long,
+                device=self.device,
+                requires_grad=False)
 
         left_child_index_mark2 = index_ladj.new(batch_size, self.num_state, seq_length, 6)
         right_child_index_mark2 = index_ladj.new(batch_size, self.num_state, seq_length, 6)
