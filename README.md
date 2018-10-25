@@ -27,7 +27,7 @@ At training time only `Token` is used, `Head` represents the dependency head ind
 
 As observations in our generative model, pre-trained word vectors are required. The input word2vec map should be a pickled representation of Python dict object.
 
-We provide the pre-trained word vector file we used in the paper and a small subset of Penn Treebank data ([HERE](https://drive.google.com/open?id=18f61nN7l-Dvzqys7BypCsaCcj8gay7ip)) for testing the tagging code. This dataset contains 10% samples of Penn Treebank and is public in [NLTK corpus](http://www.nltk.org/howto/corpus.html). Full Penn Treebank dataset requires a LDC license.
+We provide the pre-trained word vector file we used in the paper and a small subset of Penn Treebank data ([HERE](https://drive.google.com/file/d/18f61nN7l-Dvzqys7BypCsaCcj8gay7ip/view?usp=sharing)) for testing the tagging code. This dataset contains 10% samples of Penn Treebank and is public in [NLTK corpus](http://www.nltk.org/howto/corpus.html). Full Penn Treebank dataset requires a LDC license.
 
 ## Markov Structure for Tagging
 
