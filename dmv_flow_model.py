@@ -396,7 +396,6 @@ class DMVFlow(nn.Module):
         log_stop_left = self.log_stop_left[0].view(1, 1, 1, self.num_state, 2) \
                      .expand(batch_size, self.num_state, seq_length, self.num_state, 2)
 
-        index = torch.zeros(ep_size, dtype=torch.long, device=self.device)
         #TODO(junxian): ideally, only the l loop is needed
         # but eliminate the rest loops would be a bit hard
         for l in range(2, seq_length+1):
@@ -415,8 +414,9 @@ class DMVFlow(nn.Module):
                                 .expand(ep_size)
 
 
-                    index[:, :, k-1, :, :].fill_(1)
-                    index_var = index.clone()
+                    index = torch.zeros(seq_length, dtype=torch.long, device=self.device)
+                    index[k-1] = 1
+                    index_var = index.view(1, 1, seq_length, 1, 1).expand(ep_size)
                     log_stop_right_gather = torch.gather(log_stop_right, 2, index_var)
 
                     # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_right[0, m==k-1, i]
@@ -436,10 +436,9 @@ class DMVFlow(nn.Module):
                     log_p2_ep = log_p2.view(batch_size, 1, 1, self.num_state, seq_length) \
                                 .expand(ep_size)
 
-                    index.zero_()
-
-                    index[:, :, :, :, k].fill_(1)
-                    index_var = index.clone()
+                    index = torch.zeros(seq_length, dtype=torch.long, device=self.device)
+                    index[k] = 1
+                    index_var = index.view(1, 1, 1, 1, seq_length).expand(ep_size)
                     log_stop_left_gather = torch.gather(log_stop_left, 4, index_var)
 
                     # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_left[0, n==k, j]
@@ -517,8 +516,6 @@ class DMVFlow(nn.Module):
         ep_size = torch.Size([batch_size, self.num_state, seq_length, \
                               self.num_state, seq_length])
 
-        index = torch.zeros(ep_size, dtype=torch.long, device=self.device)
-
         for i in range(seq_length):
             j = i + 1
             cat_var = [torch.zeros((batch_size, self.num_state, 1),
@@ -526,10 +523,12 @@ class DMVFlow(nn.Module):
                     device=self.device).fill_(NEG_INFINITY) for _ in range(seq_length)]
             cat_var[i] = density[:, i, :].unsqueeze(dim=2)
             self.log_p_parse[i, j, 0] = torch.cat(cat_var, dim=2)
-            self.left_child[i, j, 0] = index.new(batch_size, self.num_state, seq_length, 6) \
-                                            .fill_(-1)
-            self.right_child[i, j, 0] = index.new(batch_size, self.num_state, seq_length, 6) \
-                                             .fill_(-1)
+            self.left_child[i, j, 0] = torch.zeros((batch_size, self.num_state, seq_length, 6),
+                                                    dtype=torch.long,
+                                                    device=self.device).fill_(-1)
+            self.right_child[i, j, 0] = torch.zeros((batch_size, self.num_state, seq_length, 6),
+                                                    dtype=torch.long,
+                                                    device=self.device).fill_(-1)
             self.unary_parses(i, j, batch_size, seq_length, symbol_index_t)
 
         log_attach_right = self.log_attach_right.view(1, self.num_state, 1, self.num_state, 1) \
@@ -559,9 +558,10 @@ class DMVFlow(nn.Module):
                                 .expand(ep_size)
 
 
-                    index.zero_()
-                    index[:, :, k-1, :, :].fill_(1)
-                    log_stop_right_gather = torch.gather(log_stop_right, 2, index)
+                    index = torch.zeros(seq_length, dtype=torch.long, device=self.device)
+                    index[k-1] = 1
+                    index_var = index.view(1, 1, seq_length, 1, 1).expand(ep_size)
+                    log_stop_right_gather = torch.gather(log_stop_right, 2, index_var)
 
                     # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_right[0, m==k-1, i]
                     # + attach_right[i, j]
@@ -580,10 +580,11 @@ class DMVFlow(nn.Module):
                     log_p2_ep = log_p2.view(batch_size, 1, 1, self.num_state, seq_length) \
                                 .expand(ep_size)
 
-                    index.zero_()
+                    index = torch.zeros(seq_length, dtype=torch.long, device=self.device)
+                    index[k] = 1
+                    index_var = index.view(1, 1, 1, 1, seq_length).expand(ep_size)
 
-                    index[:, :, :, :, k].fill_(1)
-                    log_stop_left_gather = torch.gather(log_stop_left, 4, index)
+                    log_stop_left_gather = torch.gather(log_stop_left, 4, index_var)
 
                     # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_left[0, n==k, j]
                     # + self.attach_left[j, i]
