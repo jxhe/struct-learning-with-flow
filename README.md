@@ -9,6 +9,8 @@ EMNLP 2018
 
 The code performs unsupervised structure learning with flow, specifically on Markov structure and dependency structure.
 
+Please concact junxianh@cs.cmu.edu if you have any questions.
+
 ## Requirements
 
 - Python 3.6
@@ -34,17 +36,21 @@ We provide the pre-trained word vector file we used in the paper and a small sub
 Train a Gaussian HMM baseline: 
 
 ```shell
-python markov_train.py --model gaussian --train_file /path/to/train --word_vec /path/to/word_vec_file
+python markov_flow_train.py --model gaussian --train_file /path/to/train --word_vec /path/to/word_vec_file
 ```
 
-By default we evaluate on the training data (this is not cheating in unsupervised learning case),  different test dataset can be specified by `--test_file` option. Training uses GPU when there is GPU available,  and CPU otherwise, but running on CPU can be extremely slow. Full configuration options can be found in `markov_flow_train.py`. After training the trained model will be saved in `dump_models/markov` directory.
+By default we evaluate on the training data (this is not cheating in unsupervised learning case),  different test dataset can be specified by `--test_file` option. Training uses GPU when there is GPU available,  and CPU otherwise, but running on CPU can be extremely slow. Full configuration options can be found in `markov_flow_train.py`. After training the trained model will be saved in `dump_models/markov/`.
 
 Unsupervised learning is usually very sensitive to initializations, for this task we run multiple random restarts and pick the one with the highest training data likelihood as described in paper. It is generally sufficient to run 10 random restarts. When running with multiple random restarts, it is necessary to specify the `--jobid` or `--taskid` options to avoid model overwriting.
 
 After training the Gaussian HMM, train a projection model with Markov prior:
 
 ```shell
-python markov_train.py --model nice --train_file /path/to/train --word_vec /path/to/word_vec_file --load_gaussian /path/to/gaussian_model 
+python markov_flow_train.py \
+        --model nice \
+        --train_file /path/to/train \
+        --word_vec /path/to/word_vec_file \
+        --load_gaussian /path/to/gaussian_model 
 ```
 
 Initializing the prior with pre-trained Gaussian baseline would make the training much more stable. By default 4 coupling layers are used in NICE projection. 
@@ -58,7 +64,7 @@ On the provided subset of Penn Treebank that contains 3914 sentences, the Gaussi
 After training, prediction can be performed with :
 
 ```shell
-python markov_train.py --model nice --train_file /path/to/tag_file --tag_from /path/to/pretrained_model
+python markov_flow_train.py --model nice --train_file /path/to/tag_file --tag_from /path/to/pretrained_model
 ```
 
 Here `--train_file` represents the file to be tagged, the output file is located in the current directory. 
@@ -75,21 +81,26 @@ First train a vanilla DMV model with viterbi EM (this only runs on CPU):
 python dmv_viterbi_train.py --train_file /path/to/train_data --test_file /path/to/test_data
 ```
 
-Saved model is located in `dump_models/dmv/viterbi_dmv.pickle`.
+Trained model is saved in `dump_models/dmv/viterbi_dmv.pickle`.
 
 
 
 Then use the pre-trained DMV to initialize the syntax model in flow/Gaussian model:
 
 ```shell
-python dmv_fow_train.py --model nice --train_file /path/to/train_data --test_file /path/to/test_data --word_vec /path/to/word_vec_file --load_viterbi_dmv dump_models/dmv/viterbi_dmv.pickle
+python dmv_flow_train.py \
+        --model nice \
+        --train_file /path/to/train_data \
+        --test_file /path/to/test_data \
+        --word_vec /path/to/word_vec_file \
+        --load_viterbi_dmv dump_models/dmv/viterbi_dmv.pickle
 ```
 
-The script trains a Gaussian baseline when `--model` is specified as `gaussian`. Training uses GPU when there is GPU available,  and CPU otherwise. 
+The script trains a Gaussian baseline when `--model` is specified as `gaussian`. Training uses GPU when there is GPU available,  and CPU otherwise. Trained model is saved in `dump_models/dmv/`.
 
 
 
-## References
+## Reference
 ```
 @inproceedings{he2018unsupervised,
     title = {Unsupervised Learning of Syntactic Structure with Invertible Neural Projections},
