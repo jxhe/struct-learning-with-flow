@@ -81,7 +81,7 @@ First train a vanilla DMV model with viterbi EM (this only runs on CPU):
 python dmv_viterbi_train.py --train_file /path/to/train_data --test_file /path/to/test_data
 ```
 
-Trained model is saved in `dump_models/dmv/viterbi_dmv.pickle`.
+Trained model is saved in `dump_models/dmv/viterbi_dmv.pickle`. Implementation of this basic DMV training is partially based on [this repo](https://github.com/davidswelt/dmvccm).
 
 
 
