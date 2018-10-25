@@ -7,17 +7,17 @@ import time
 import pickle
 
 from collections import namedtuple
-from utils import read_conll, get_tag_set
-import dmv_viterbi_model as dmv
+from modules import read_conll, get_tag_set
+import modules.dmv_viterbi_model as dmv
 
 def init_config():
 
     parser = argparse.ArgumentParser(description='train dmv with viterbi EM')
 
     # hyperparams
-    parser.add_argument('--stop_adj', default=0.3, type=float, 
+    parser.add_argument('--stop_adj', default=0.3, type=float,
         help='initial value for stop adjacent')
-    parser.add_argument('--smth_const', default=1, type=int, 
+    parser.add_argument('--smth_const', default=1, type=int,
         help='laplace smooth parameter')
 
     # data input
@@ -30,9 +30,9 @@ def init_config():
     parser.add_argument('--choice', choices=['random', 'minival', 'bias_middle',
         'soft_bias_middle', 'exclude_end', 'bias_left'], default='exclude_end',
         help='tie breaking policy at initial stage')
-    parser.add_argument('--valid_nepoch', default=1, type=int, 
+    parser.add_argument('--valid_nepoch', default=1, type=int,
         help='test every n iterations')
-    parser.add_argument('--epochs', default=10, type=int, 
+    parser.add_argument('--epochs', default=10, type=int,
         help='number of epochs')
 
     args = parser.parse_args()

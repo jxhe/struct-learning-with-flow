@@ -4,7 +4,7 @@ import random
 import math
 
 from nltk import tree
-from utils import stable_math_log
+from .utils import stable_math_log
 
 
 harmonic_constant = 2.0
@@ -64,7 +64,7 @@ class DMV(object):
     def init_params(self, train_tags, tag_set):
         tita, count = DMVDict(), DMVDict()
         # harmonic initializer
-        lplace_smooth(tita, count, tag_set, 
+        lplace_smooth(tita, count, tag_set,
             self.end_symbol, self.args.smth_const)
         self.set_harmonic(True)
         for i, s in enumerate(filter(lambda s: len(s) > 1, \
@@ -118,7 +118,7 @@ class DMV(object):
             if all_len:
                 if k % 10 == 0:
                     print('parse %d trees' % k)
-        
+
         cnt = 0
         dir_cnt = 0.0
         undir_cnt = 0.0
@@ -381,7 +381,7 @@ class DMV(object):
         try:
             return stable_math_log(1.0 - math.exp(self.p_stop_left(w, val, harmonic)))
         except ValueError:
-            print(math.exp(self.p_stop_left(w, val, harmonic)), 
+            print(math.exp(self.p_stop_left(w, val, harmonic)),
                 self.p_stop_left(w, val, harmonic))
 
     def p_nonstop_right(self, w, val, harmonic=False):

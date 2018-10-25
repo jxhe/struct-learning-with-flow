@@ -7,16 +7,16 @@ import torch.nn as nn
 import numpy as np
 
 from collections import Counter
-from projection import NICETrans
-from dmv_viterbi_model import DMVDict
+from .projection import NICETrans
+from .dmv_viterbi_model import DMVDict
 
 from torch.nn import Parameter
 
-from utils import log_sum_exp, \
-                  unravel_index, \
-                  data_iter, \
-                  to_input_tensor, \
-                  stable_math_log
+from .utils import log_sum_exp, \
+                   unravel_index, \
+                   data_iter, \
+                   to_input_tensor, \
+                   stable_math_log
 
 harmonic_constant = 2.0
 NEG_INFINITY = -1e20
@@ -231,7 +231,7 @@ class DMVFlow(nn.Module):
 
         return res
 
-    def test(self, gold, test_emb, all_len=False):
+    def test(self, gold, test_emb, eval_all=False):
         """
         Args:
             gold: A nested list of heads
@@ -245,7 +245,7 @@ class DMVFlow(nn.Module):
 
         batch_id_ = 0
 
-        if all_len:
+        if eval_all:
             batch_size = 2
         else:
             batch_size = self.args.batch_size
@@ -255,8 +255,10 @@ class DMVFlow(nn.Module):
                                            is_test=True,
                                            shuffle=False):
 
-            if all_len:
+            if eval_all and batch_id_ % 10 == 0:
                 print('batch %d' % batch_id_)
+                print('total length: %d' % cnt)
+                print('correct directed: %d' % dir_cnt)
             batch_id_ += 1
             try:
                 sents_var, masks = to_input_tensor(sents, pad, self.device)
@@ -285,10 +287,6 @@ class DMVFlow(nn.Module):
                     dir_cnt += directed
                     undir_cnt += undirected
 
-            if all_len:
-                print('total length: %d' % cnt)
-                print('correct directed: %d' % dir_cnt)
-
         dir_acu = dir_cnt / cnt
         undir_acu = undir_cnt / cnt
 
@@ -296,7 +294,7 @@ class DMVFlow(nn.Module):
         self.left_child = {}
         self.right_child = {}
 
-        if all_len:
+        if eval_all:
             print('%d batches out of memory' % memory_sent_cnt)
 
         return (dir_acu, undir_acu)

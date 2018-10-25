@@ -9,13 +9,13 @@ import pickle
 import torch
 import numpy as np
 
-import dmv_flow_model as dmv
-from utils import data_iter, \
-                  read_conll, \
-                  sents_to_vec, \
-                  sents_to_tagid, \
-                  to_input_tensor, \
-                  generate_seed
+import modules.dmv_flow_model as dmv
+from modules import data_iter, \
+                    read_conll, \
+                    sents_to_vec, \
+                    sents_to_tagid, \
+                    to_input_tensor, \
+                    generate_seed
 
 
 def init_config():
@@ -38,26 +38,28 @@ def init_config():
 
     # model config
     parser.add_argument('--model', choices=['gaussian', 'nice'], default='gaussian')
-    parser.add_argument('--couple_layers', default=4, type=int,
+    parser.add_argument('--couple_layers', default=8, type=int,
         help='number of coupling layers in NICE')
     parser.add_argument('--cell_layers', default=1, type=int,
         help='number of cell layers of ReLU net in each coupling layer')
-    parser.add_argument('--hidden_units', default=50, type=int, help='hidden units in ReLU Net')    
+    parser.add_argument('--hidden_units', default=50, type=int, help='hidden units in ReLU Net')
 
     # others
     parser.add_argument('--train_from', type=str, default='',
         help='load a pre-trained checkpoint')
     parser.add_argument('--seed', default=5783287, type=int, help='random seed')
-    parser.add_argument('--set_seed', action='store_true', default=False, 
+    parser.add_argument('--set_seed', action='store_true', default=False,
         help='if set seed')
-    parser.add_argument('--valid_nepoch', default=1, type=int, 
-        help='valid every n epochs')   
+    parser.add_argument('--valid_nepoch', default=1, type=int,
+        help='valid every n epochs')
+    parser.add_argument('--eval_all', action='store_true', default=False,
+        help='if true, the script would evaluate on all lengths after training')
 
     # these are for slurm purpose to save model
     # they can also be used to run multiple random restarts with various settings,
     # to save models that can be identified with ids
     parser.add_argument('--jobid', type=int, default=0, help='slurm job id')
-    parser.add_argument('--taskid', type=int, default=0, help='slurm task id') 
+    parser.add_argument('--taskid', type=int, default=0, help='slurm task id')
 
 
     args = parser.parse_args()
@@ -122,11 +124,6 @@ def main(args):
         print('acc on length <= 10: #trees %d, undir %2.1f, dir %2.1f' \
               % (len(test_gold), 100 * undirected, 100 * directed))
 
-        # directed, undirected = model.eval(test_gold_full, test_emb_full, verbose=True)
-        # print('accuracy on all lengths: number of trees:%d, undir: %2.1f, dir: %2.1f' \
-        #       % (len(test_gold), 100 * undirected, 100 * directed))
-        return
-
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     log_niter = (len(train_emb)//args.batch_size)//5
@@ -154,7 +151,6 @@ def main(args):
             sents_var, masks = to_input_tensor(sents, pad, device)
             sents_var, _ = model.transform(sents_var)
             sents_var = sents_var.transpose(0, 1)
-            # log_likelihood = sum([model.p_inside(sent) for sent in sents])
             log_likelihood = model.p_inside(sents_var, masks)
 
             avg_ll_loss = -log_likelihood / batch_size
@@ -178,7 +174,6 @@ def main(args):
                       model.var.data.min(), time.time() - begin_time), file=sys.stderr)
 
             train_iter += 1
-        # model.print_params()
         if epoch % args.valid_nepoch == 0:
             with torch.no_grad():
                 directed, undirected = model.test(test_deps, test_emb)
@@ -197,13 +192,19 @@ def main(args):
         stop_avg_ll_last = stop_avg_ll
         stop_avg_ll = stop_num_words = 0
 
-    # model.load_state_dict(torch.load(args.save_path))
-    # eval on all lengths
-    # directed, undirected = model.eval(test_gold_full, test_emb_full, verbose=True)
-    # print('accuracy on all lengths: number of trees:%d, undir: %2.1f, dir: %2.1f' \
-    #       % (len(test_gold), 100 * undirected, 100 * directed))
-
     torch.save(model.state_dict(), args.save_path)
+
+    # eval on all lengths
+    if args.eval_all:
+        test_sents, _ = read_conll(args.test_file)
+        test_deps = [sent["head"] for sent in test_sents]
+        test_emb = sents_to_vec(word_vec, test_sents)
+        print("start evaluating on all lengths")
+        with torch.no_grad():
+            directed, undirected = model.test(test_deps, test_emb, eval_all=True)
+        print('accuracy on all lengths: number of trees:%d, undir: %2.1f, dir: %2.1f' \
+              % (len(test_gold), 100 * undirected, 100 * directed))
+
 
 if __name__ == '__main__':
     parse_args = init_config()
