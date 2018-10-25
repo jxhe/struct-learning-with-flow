@@ -6,7 +6,7 @@ from math import log
 
 class ConllSent(object):
     """docstring for ConllSent"""
-    def __init__(self, key_list=["word", "gold_tag", "pred_tag", "head"]):
+    def __init__(self, key_list=["word", "tag", "head"]):
         super(ConllSent, self).__init__()
         self.sent_dict = {}
         self.keys = key_list
@@ -16,11 +16,11 @@ class ConllSent(object):
     def __getitem__(self, key):
         return self.sent_dict[key]
 
+    def __setitem__(self, key, item):
+        self.sent_dict[key] = item
+
     def __len__(self):
         return len(self.sent_dict["word"])
-
-    def get(key):
-        return self.sent_dict[key]
 
 def is_number(s):
     try:
@@ -28,6 +28,12 @@ def is_number(s):
         return True
     except ValueError:
         return False
+
+def cast_to_int(s):
+    try:
+        return int(s)
+    except ValueError:
+        return s
 
 def word2id(sentences):
     """map words to word ids
@@ -67,20 +73,23 @@ def sents_to_vec(vec_dict, sentences):
     Returns:
         embeddings: a list of tensors
         tags: a nested list of gold tags
-        word_ids: a nested list of word ids
-
     """
     embeddings = []
-    tags = []
     for sent in sentences:
         sample = [vec_dict[word] for word in sent["word"]]
-        sample_tags = [tag for tag in sent["gold_tag"]]
         embeddings.append(sample)
-        tags.append(sample_tags)
 
-    return embeddings, tags
+    return embeddings
 
-def read_conll(fname, rm_null=True, prc_num=True):
+def sents_to_tagid(sentences):
+    """transform tagged sents to tagids,
+    also return the look up table
+    """
+    ids = defaultdict(lambda: len(ids))
+    id_sents = [[ids[tag] for tag in sent["tag"]] for sent in sentences]
+    return id_sents, ids
+
+def read_conll(fname, max_len=1e3, rm_null=True, prc_num=True):
     sentences = []
     sent = ConllSent()
 
@@ -91,12 +100,12 @@ def read_conll(fname, rm_null=True, prc_num=True):
         for line in fin:
             if line != '\n':
                 line = line.strip().split('\t')
-                sent["head"].append(line[4])
+                sent["head"].append((int(line[0]), 
+                    cast_to_int(line[3])))
                 if rm_null and line[2] == '-NONE-':
                     null_sent.append(loc)
                 else:
-                    sent["gold_tag"].append(line[2])
-                    sent["pred_tag"].append(line[3])
+                    sent["tag"].append(line[2])
                     if prc_num and is_number(line[1]):
                         sent["word"].append('0')
                     else:
@@ -105,7 +114,7 @@ def read_conll(fname, rm_null=True, prc_num=True):
                 loc += 1
             else:
                 loc = 0
-                if len(sent) > 0:
+                if len(sent) > 0 and len(sent) <= max_len:
                     sentences.append(sent)
                     null_total.append(null_sent)
 
@@ -117,7 +126,6 @@ def read_conll(fname, rm_null=True, prc_num=True):
 def write_conll(fname, sentences, pred_tags, null_total):
     with open(fname, 'w') as fout:
         for (pred, null_sent, sent) in zip(pred_tags, null_total, sentences):
-            gold_tag_list = sent["gold_tag"]
             word_list = sent["word"]
             head_list = sent["head"]
             length = len(sent) + len(null_sent)
@@ -125,13 +133,12 @@ def write_conll(fname, sentences, pred_tags, null_total):
             pred_tag_list = [str(k.item()) for k in pred]
             for null in null_sent:
                 pred_tag_list.insert(null, '-NONE-')
-                gold_tag_list.insert(null, '-NONE-')
                 word_list.insert(null, '-NONE-')
 
             for i in range(length):
-                fout.write("%d\t%s\t%s\t%s\t%s\n" %
-                    (i+1, word_list[i], gold_tag_list[i],
-                     pred_tag_list[i], head_list[i]))
+                fout.write("{}\t{}\t{}\t{}\n".format(
+                    i+1, word_list[i], pred_tag_list[i], 
+                    head_list[i][1]))
             fout.write('\n')
 
 def input_transpose(sents, pad):
@@ -192,9 +199,6 @@ def generate_seed(data, size, shuffle=True):
 
     seed = [data[index] for index in index_arr[:size]]
 
-
-
-    # seed.sort(key=lambda e: -len(e))
     return seed
 
 def get_tag_set(tag_list):
@@ -202,8 +206,31 @@ def get_tag_set(tag_list):
     tag_set.update([x for s in tag_list for x in s])
     return tag_set
 
-def stable_log(val, default_val=-1e20):
+def stable_math_log(val, default_val=-1e20):
     if val == 0:
         return default_val
 
     return math.log(val)
+
+def unravel_index(input, size):
+    """Unravel the index of tensor given size
+    Args:
+        input: LongTensor
+        size: a tuple of integers
+
+    Outputs: output,
+        - **output**: the unraveled new tensor
+
+    Examples::
+        <<< value = torch.LongTensor(4,5,7,9)
+        <<< max_val, flat_index = torch.max(value.view(4, 5, -1), dim=-1)
+        <<< index = unravel_index(flat_index, (7, 9))
+        <<< # output is a tensor with size (4, 5, 2)
+
+    """
+    idx = []
+    for adim in size[::-1]:
+        idx.append((input % adim).unsqueeze(dim=-1))
+        input = input / adim
+    idx = idx[::-1]
+    return torch.cat(idx, -1)

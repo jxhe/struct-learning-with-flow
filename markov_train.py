@@ -7,8 +7,8 @@ import time
 import os
 
 import torch
-
 import numpy as np
+
 from utils import read_conll, \
                   to_input_tensor, \
                   data_iter, \
@@ -73,7 +73,7 @@ def init_config():
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    id_ = "pos_%s_%slayers_%d_%d" % (args.model, args.couple_layers, args.jobid, args.taskid)
+    id_ = "pos_%s_%dlayers_%d_%d" % (args.model, args.couple_layers, args.jobid, args.taskid)
     save_path = os.path.join(save_dir, id_ + '.pt')
     args.save_path = save_path
     print("model save path: ", save_path)
@@ -107,8 +107,10 @@ def main(args):
     else:
         test_text = train_text
 
-    train_data, _ = sents_to_vec(word_vec, train_text)
-    test_data, test_tags = sents_to_vec(word_vec, test_text)
+    train_data = sents_to_vec(word_vec, train_text)
+    test_data = sents_to_vec(word_vec, test_text)
+
+    test_tag = [sent["tag"] for sent in test_text]
 
     num_dims = len(train_data[0][0])
     print('complete reading data')

@@ -8,7 +8,7 @@ import pickle
 
 from collections import namedtuple
 from utils import read_conll, get_tag_set
-import dmv_viterbi as dmv
+import dmv_viterbi_model as dmv
 
 def init_config():
 
@@ -42,8 +42,10 @@ def init_config():
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    save_path = os.path.join(save_dir, "viterbi_dmv.pt")
+    save_path = os.path.join(save_dir, "viterbi_dmv.pickle")
     args.save_path = save_path
+
+    print(args)
 
     return args
 
@@ -64,17 +66,17 @@ def main(args):
 
     model.set_harmonic(False)
 
-    if args.train_from:
-        model = pickle.load(open(args.load_model, 'rb'))
+    if args.train_from != '':
+        model = pickle.load(open(args.train_from, 'rb'))
         directed, undirected = model.eval(test_deps, test_tags)
-        print('number of trees:%d, undir: %2.2f, dir: %2.2f' \
+        print('acc on length <= 10: #trees %d, undir %2.2f, dir %2.2f' \
               % (len(test_deps), 100 * undirected, 100 * directed))
 
     epoch = 0
     stop = False
 
     directed, undirected = model.eval(test_deps, test_tags)
-    print('number of trees:%d, undir: %2.2f, dir: %2.2f' \
+    print('starting acc on length <= 10: #trees %d, undir %2.2f, dir %2.2f' \
           % (len(test_deps), 100 * undirected, 100 * directed))
 
     num_train = len(train_tags)
@@ -98,7 +100,7 @@ def main(args):
 
         if epoch % args.valid_nepoch == 0:
             directed, undirected = model.eval(test_deps, test_tags)
-            print('number of trees:%d, undir: %2.2f, dir: %2.2f' \
+            print('acc on length <= 10: #trees %d, undir %2.2f, dir %2.2f' \
                   % (len(test_deps), 100 * undirected, 100 * directed))
 
         epoch += 1

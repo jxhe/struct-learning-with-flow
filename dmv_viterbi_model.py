@@ -4,7 +4,7 @@ import random
 import math
 
 from nltk import tree
-from utils import stable_log
+from utils import stable_math_log
 
 
 harmonic_constant = 2.0
@@ -379,13 +379,13 @@ class DMV(object):
 
     def p_nonstop_left(self, w, val, harmonic=False):
         try:
-            return stable_log(1.0 - math.exp(self.p_stop_left(w, val, harmonic)))
+            return stable_math_log(1.0 - math.exp(self.p_stop_left(w, val, harmonic)))
         except ValueError:
             print(math.exp(self.p_stop_left(w, val, harmonic)), 
                 self.p_stop_left(w, val, harmonic))
 
     def p_nonstop_right(self, w, val, harmonic=False):
-        return stable_log(1.0 - math.exp(self.p_stop_right(w, val, harmonic)))
+        return stable_math_log(1.0 - math.exp(self.p_stop_right(w, val, harmonic)))
 
     def p_stop_left(self, w, val, harmonic=False):
         if harmonic:
