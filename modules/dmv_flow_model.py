@@ -18,7 +18,6 @@ from .utils import log_sum_exp, \
                    to_input_tensor, \
                    stable_math_log
 
-harmonic_constant = 2.0
 NEG_INFINITY = -1e20
 
 def test_piodict(piodict):
@@ -246,7 +245,7 @@ class DMVFlow(nn.Module):
         batch_id_ = 0
 
         if eval_all:
-            batch_size = 2
+            batch_size = 10
         else:
             batch_size = self.args.batch_size
 
@@ -349,9 +348,9 @@ class DMVFlow(nn.Module):
             rooted at any possible nonterminals
 
         node marks clarification:
-            '>': no marks (right first)
-            '<>': right stop mark
-            '|': both left and right stop marks
+            0: no marks (right first)
+            1: right stop mark
+            2: both left and right stop marks
 
         """
 
@@ -366,6 +365,7 @@ class DMVFlow(nn.Module):
 
         # (batch_size, seq_length, num_state)
         density = self._eval_log_density(sents)
+        constant = density.max().item()
 
         # indexed by (start, end, mark)
         # each element is a tensor with size (batch_size, num_state, seq_length)
@@ -384,76 +384,82 @@ class DMVFlow(nn.Module):
             self.log_p_inside[i, j, 0] = torch.cat(cat_var, dim=2)
             self.unary_p_inside(i, j, batch_size, seq_length)
 
-        ep_size = torch.Size([batch_size, self.num_state, seq_length, self.num_state, seq_length])
-        log_attach_right = self.log_attach_right.view(1, self.num_state, 1, self.num_state, 1) \
-                       .expand(ep_size)
-        log_stop_right = self.log_stop_right[0].view(1, self.num_state, 2, 1, 1) \
-                     .expand(batch_size, self.num_state, 2, self.num_state, seq_length)
-        log_attach_left = self.log_attach_left.view(1, self.num_state, 1, self.num_state, 1) \
-                      .transpose(1, 3).expand(ep_size)
-        log_stop_left = self.log_stop_left[0].view(1, 1, 1, self.num_state, 2) \
-                     .expand(batch_size, self.num_state, seq_length, self.num_state, 2)
+        log_stop_right = self.log_stop_right[0]
+        log_stop_left = self.log_stop_left[0]
 
         #TODO(junxian): ideally, only the l loop is needed
         # but eliminate the rest loops would be a bit hard
         for l in range(2, seq_length+1):
             for i in range(seq_length-l+1):
                 j = i + l
-                p_inside_right = []
-                p_inside_left = []
+                log_p1 = []
+                log_p2 = []
+                index = torch.zeros((seq_length, j-i-1), dtype=torch.long, 
+                    device=self.device, requires_grad=False)
+                # right attachment
                 for k in range(i+1, j):
 
-                    # right attachment
-                    log_p1 = self.log_p_inside[i, k, 0]
-                    log_p2 = self.log_p_inside[k, j, 2]
-                    log_p1_ep = log_p1.view(batch_size, self.num_state, seq_length, 1, 1) \
-                                .expand(ep_size)
-                    log_p2_ep = log_p2.view(batch_size, 1, 1, self.num_state, seq_length) \
-                                .expand(ep_size)
+                    log_p1.append(self.log_p_inside[i, k, 0].unsqueeze(-1))
+                    log_p2.append(self.log_p_inside[k, j, 2].unsqueeze(-1))
+                    index[k-1, k-i-1] = 1
 
+                log_p1 = torch.cat(log_p1, dim=-1)
+                log_p2 = torch.cat(log_p2, dim=-1)
+                index = index.unsqueeze(0).expand(self.num_state, *index.size())
 
-                    index = torch.zeros(seq_length, dtype=torch.long, device=self.device)
-                    index[k-1] = 1
-                    index_var = index.view(1, 1, seq_length, 1, 1).expand(ep_size)
-                    log_stop_right_gather = torch.gather(log_stop_right, 2, index_var)
+                # (num_state, seq_len, k)
+                log_stop_right_gather = torch.gather(
+                    log_stop_right.unsqueeze(-1).expand(*log_stop_right.size(), j-i-1), 
+                    1, index)
 
-                    # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_right[0, m==k-1, i]
-                    # + attach_right[i, j]
-                    log_p_tmp = log_p1_ep + log_p2_ep + log_attach_right + log_stop_right_gather
+                # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_right[0, i, m==k-1]
+                # + attach_right[i, j]
+                # log_p_tmp = log_p1_ep + log_p2_ep + log_attach_right + log_stop_right_gather
 
-                    # log_p_tmp[i, m, j, n]
-                    # log_p_tmp = log_p_tmp.transpose(1, 2)
-                    p_inside_right.append(log_p_tmp)
+                # to save memory, first marginalize out j and n
+                # (b, i, j, k) -> (b, i, k)
+                log_p2_tmp = log_sum_exp(log_p2.unsqueeze(1), dim=3) + \
+                             self.log_attach_right.view(1, *(self.log_attach_right.size()), 1)
+                log_p2_tmp = log_sum_exp(log_p2_tmp, dim=2)
 
+                # (b, i, m, k)
+                log_p_tmp = log_p1 + log_p2_tmp.unsqueeze(2) + \
+                            log_stop_right_gather.unsqueeze(0)
 
-                    # left attachment
-                    log_p1 = self.log_p_inside[i, k, 2]
-                    log_p2 = self.log_p_inside[k, j, 1]
-                    log_p1_ep = log_p1.view(batch_size, self.num_state, seq_length, 1, 1) \
-                                .expand(ep_size)
-                    log_p2_ep = log_p2.view(batch_size, 1, 1, self.num_state, seq_length) \
-                                .expand(ep_size)
+                self.log_p_inside[i, j, 0] = log_sum_exp(log_p_tmp, dim=-1)
 
-                    index = torch.zeros(seq_length, dtype=torch.long, device=self.device)
-                    index[k] = 1
-                    index_var = index.view(1, 1, 1, 1, seq_length).expand(ep_size)
-                    log_stop_left_gather = torch.gather(log_stop_left, 4, index_var)
+                # left attachment
+                log_p1 = []
+                log_p2 = []
+                index = torch.zeros((seq_length, j-i-1), dtype=torch.long, 
+                    device=self.device, requires_grad=False)
+                for k in range(i+1, j):
 
-                    # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_left[0, n==k, j]
-                    # + self.attach_left[j, i]
-                    log_p_tmp = log_p1_ep + log_p2_ep + log_attach_left + log_stop_left_gather
+                    log_p1.append(self.log_p_inside[i, k, 2].unsqueeze(-1))
+                    log_p2.append(self.log_p_inside[k, j, 1].unsqueeze(-1))
+                    index[k, k-i-1] = 1
 
-                    # log_p_tmp[b, i, m, j, n]
-                    # log_p_tmp = log_p_tmp.permute(1, 3, 0, 2)
-                    p_inside_left.append(log_p_tmp)
+                log_p1 = torch.cat(log_p1, dim=-1)
+                log_p2 = torch.cat(log_p2, dim=-1)
+                index = index.unsqueeze(0).expand(self.num_state, *index.size())
 
-                # TODO(junxian): ensure the invalid index has -inf value
-                # TODO(junxian): in_place
-                self.log_p_inside[i, j, 0] = log_sum_exp(torch.cat(p_inside_right, dim=-1) \
-                                                   .view(batch_size, self.num_state, seq_length, -1), dim=3)
+                log_stop_left_gather = torch.gather(
+                    log_stop_left.unsqueeze(-1).expand(*log_stop_left.size(), j-i-1), 
+                    1, index)
 
-                self.log_p_inside[i, j, 1] = log_sum_exp(torch.cat(p_inside_left, dim=1) \
-                                                   .view(batch_size, -1, self.num_state, seq_length), dim=1)
+                # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_left[0, j, n==k]
+                # + self.attach_left[j, i]
+
+                # to save memory, first marginalize out j and n
+                # (b, i, j, k) -> (b, j, k)
+                log_p1_tmp = log_sum_exp(log_p1.unsqueeze(2), dim=3) + \
+                             self.log_attach_left.permute(1, 0).view(1, *(self.log_attach_left.size()), 1)
+                log_p1_tmp = log_sum_exp(log_p1_tmp, dim=1)
+
+                # (b, j, n, k)
+                log_p_tmp = log_p1_tmp.unsqueeze(2) + log_p2 + \
+                            log_stop_left_gather.unsqueeze(0)
+                self.log_p_inside[i, j, 1] = log_sum_exp(log_p_tmp, dim=-1)
 
                 self.unary_p_inside(i, j, batch_size, seq_length)
 
@@ -511,8 +517,6 @@ class DMVFlow(nn.Module):
 
         batch_size, seq_length, _ = sents.size()
 
-        ep_size = torch.Size([batch_size, self.num_state, seq_length, \
-                              self.num_state, seq_length])
 
         for i in range(seq_length):
             j = i + 1
@@ -529,82 +533,115 @@ class DMVFlow(nn.Module):
                                                     device=self.device).fill_(-1)
             self.unary_parses(i, j, batch_size, seq_length, symbol_index_t)
 
-        log_attach_right = self.log_attach_right.view(1, self.num_state, 1, self.num_state, 1) \
-                               .expand(ep_size)
-        log_stop_right = self.log_stop_right[0].view(1, self.num_state, 2, 1, 1) \
-                             .expand(batch_size, self.num_state, 2, self.num_state, seq_length)
-        log_attach_left = self.log_attach_left.view(1, self.num_state, 1, self.num_state, 1) \
-                              .transpose(1, 3).expand(ep_size)
-        log_stop_left = self.log_stop_left[0].view(1, 1, 1, self.num_state, 2) \
-                            .expand(batch_size, self.num_state, seq_length, self.num_state, 2)
+        log_stop_right = self.log_stop_right[0]
+        log_stop_left = self.log_stop_left[0]
 
         # ideally, only the l loop is needed
         # but eliminate the rest loops would be a bit hard
         for l in range(2, seq_length+1):
             for i in range(seq_length-l+1):
                 j = i + l
-                p_inside_right = []
-                p_inside_left = []
+
+                # right attachment
+                log_p1 = []
+                log_p2 = []
+                index = torch.zeros((seq_length, j-i-1), dtype=torch.long, 
+                    device=self.device, requires_grad=False)
                 for k in range(i+1, j):
 
                     # right attachment
-                    log_p1 = self.log_p_parse[i, k, 0]
-                    log_p2 = self.log_p_parse[k, j, 2]
-                    log_p1_ep = log_p1.view(batch_size, self.num_state, seq_length, 1, 1) \
-                                .expand(ep_size)
-                    log_p2_ep = log_p2.view(batch_size, 1, 1, self.num_state, seq_length) \
-                                .expand(ep_size)
+                    log_p1.append(self.log_p_parse[i, k, 0].unsqueeze(-1))
+                    log_p2.append(self.log_p_parse[k, j, 2].unsqueeze(-1))
+                    index[k-1, k-i-1] = 1
+
+                log_p1 = torch.cat(log_p1, dim=-1)
+                log_p2 = torch.cat(log_p2, dim=-1)
+                index = index.unsqueeze(0).expand(self.num_state, *index.size())
+
+                # (num_state, seq_len, k)
+                log_stop_right_gather = torch.gather(
+                    log_stop_right.unsqueeze(-1).expand(*log_stop_right.size(), j-i-1), 
+                    1, index)
+
+                # log_p2_tmp: (b, j, k)
+                # max_index_loc: (b, j, k)
+                log_p2_tmp, max_index_loc = torch.max(log_p2, 2)
+
+                # log_p2_tmp: (b, i, k)
+                # max_index_symbol: (b, i, k)
+                log_p2_tmp, max_index_symbol = torch.max(log_p2_tmp.unsqueeze(1) +
+                    self.log_attach_right.view(1, *(self.log_attach_right.size()), 1), 2)
+
+                # (b, i, m, k)
+                log_p_tmp = log_p1 + log_p2_tmp.unsqueeze(2) + log_stop_right_gather.unsqueeze(0)
+
+                # log_p_max: (batch_size, num_state, seq_length)
+                # max_index_k: (batch_size, num_state, seq_length)
+                log_p_max, max_index_k = torch.max(log_p_tmp, dim=-1)
+                self.log_p_parse[i, j, 0] = log_p_max
+
+                # (b, j, k) --> (b, i, k)
+                max_index_loc = torch.gather(max_index_loc, index=max_index_symbol, dim=1)
+
+                # (b, i, k) --> (b, i, m)
+                max_index_symbol = torch.gather(max_index_symbol, index=max_index_k, dim=2)
+                max_index_loc = torch.gather(max_index_loc, index=max_index_k, dim=2)
+
+                # (batch_size, num_state, seq_len, 3)
+                max_index_r = torch.cat((max_index_k.unsqueeze(-1),
+                                         max_index_symbol.unsqueeze(-1),
+                                         max_index_loc.unsqueeze(-1)), dim=-1)
 
 
-                    index = torch.zeros(seq_length, dtype=torch.long, device=self.device)
-                    index[k-1] = 1
-                    index_var = index.view(1, 1, seq_length, 1, 1).expand(ep_size)
-                    log_stop_right_gather = torch.gather(log_stop_right, 2, index_var)
+                # left attachment
+                log_p1 = []
+                log_p2 = []
+                index = torch.zeros((seq_length, j-i-1), dtype=torch.long, 
+                    device=self.device, requires_grad=False)
+                for k in range(i+1, j):
 
-                    # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_right[0, m==k-1, i]
-                    # + attach_right[i, j]
-                    log_p_tmp = log_p1_ep + log_p2_ep + log_attach_right + log_stop_right_gather
+                    log_p1.append(self.log_p_parse[i, k, 2].unsqueeze(-1))
+                    log_p2.append(self.log_p_parse[k, j, 1].unsqueeze(-1))
+                    index[k, k-i-1] = 1
 
-                    # log_p_tmp[b, i, m, j, n]
-                    # log_p_tmp = log_p_tmp.transpose(1, 2)
-                    p_inside_right.append(log_p_tmp.unsqueeze(dim=3))
+                log_p1 = torch.cat(log_p1, dim=-1)
+                log_p2 = torch.cat(log_p2, dim=-1)
+                index = index.unsqueeze(0).expand(self.num_state, *index.size())
 
+                # (num_state, seq_len, k)
+                log_stop_left_gather = torch.gather(
+                    log_stop_left.unsqueeze(-1).expand(*log_stop_left.size(), j-i-1), 
+                    1, index)
 
-                    # left attachment
-                    log_p1 = self.log_p_parse[i, k, 2]
-                    log_p2 = self.log_p_parse[k, j, 1]
-                    log_p1_ep = log_p1.view(batch_size, self.num_state, seq_length, 1, 1) \
-                                .expand(ep_size)
-                    log_p2_ep = log_p2.view(batch_size, 1, 1, self.num_state, seq_length) \
-                                .expand(ep_size)
+                # log_p1_tmp: (b, i, k)
+                # max_index_loc: (b, i, k)
+                log_p1_tmp, max_index_loc = torch.max(log_p1, 2)
 
-                    index = torch.zeros(seq_length, dtype=torch.long, device=self.device)
-                    index[k] = 1
-                    index_var = index.view(1, 1, 1, 1, seq_length).expand(ep_size)
+                # log_p1_tmp: (b, j, k)
+                # max_index_symbol: (b, j, k)
+                log_p1_tmp, max_index_symbol = torch.max(log_p1_tmp.unsqueeze(2) +
+                    self.log_attach_left.permute(1, 0).view(1, *(self.log_attach_left.size()), 1), 1)
 
-                    log_stop_left_gather = torch.gather(log_stop_left, 4, index_var)
-
-                    # log_p_tmp[b, i, m, j, n] = log_p1[b, i, m] + log_p2[b, j, n] + stop_left[0, n==k, j]
-                    # + self.attach_left[j, i]
-                    log_p_tmp = log_p1_ep + log_p2_ep + log_attach_left + log_stop_left_gather
-
-                    # log_p_tmp[b, i, m, j, n]
-                    p_inside_left.append(log_p_tmp.unsqueeze(dim=1))
+                # (b, j, n, k)
+                log_p_tmp = log_p1_tmp.unsqueeze(2) + log_p2 + log_stop_left_gather.unsqueeze(0)
 
 
                 # log_p_max: (batch_size, num_state, seq_length)
-                # max_index: (batch_size, num_state, seq_length)
-                log_p_max_r, max_index_r = torch.max(torch.cat(p_inside_right, dim=3) \
-                                           .view(batch_size, self.num_state, seq_length, -1), dim=-1)
-                log_p_max_l, max_index_l = torch.max(torch.cat(p_inside_left, dim=1) \
-                                           .view(batch_size, -1, self.num_state, seq_length), dim=1)
+                # max_index_k: (batch_size, num_state, seq_length)
+                log_p_max, max_index_k = torch.max(log_p_tmp, dim=-1)
+                self.log_p_parse[i, j, 1] = log_p_max
 
-                # max_index: (batch_size, num_state, seq_length, 3)
-                max_index_r = unravel_index(max_index_r, (j-i-1, self.num_state, seq_length))
-                max_index_l = unravel_index(max_index_l, (j-i-1, self.num_state, seq_length))
+                # (b, i, k) --> (b, j, k)
+                max_index_loc = torch.gather(max_index_loc, index=max_index_symbol, dim=1)
 
-                self.log_p_parse[i, j, 0] = log_p_max_r
-                self.log_p_parse[i, j, 1] = log_p_max_l
+                # (b, j, k) --> (b, j, m)
+                max_index_symbol = torch.gather(max_index_symbol, index=max_index_k, dim=2)
+                max_index_loc = torch.gather(max_index_loc, index=max_index_k, dim=2)
+
+                # (batch_size, num_state, seq_len, 3)
+                max_index_l = torch.cat((max_index_k.unsqueeze(-1),
+                                         max_index_symbol.unsqueeze(-1),
+                                         max_index_loc.unsqueeze(-1)), dim=-1)
 
                 right_child_index_r = index.new(batch_size, self.num_state, seq_length, 6)
                 left_child_index_r = index.new(batch_size, self.num_state, seq_length, 6)

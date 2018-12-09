@@ -79,7 +79,7 @@ def init_config():
         torch.manual_seed(args.seed)
         if args.cuda:
             torch.cuda.manual_seed(args.seed)
-        np.random.seed(args.seed * 13 / 7)
+        np.random.seed(args.seed)
 
     print(args)
 
@@ -91,7 +91,7 @@ def main(args):
     word_vec = pickle.load(open(args.word_vec, 'rb'))
     print('complete loading word vectors')
 
-    train_sents, _ = read_conll(args.train_file)
+    train_sents, _ = read_conll(args.train_file, max_len=10)
     test_sents, _ = read_conll(args.test_file, max_len=10)
     test_deps = [sent["head"] for sent in test_sents]
 
@@ -120,9 +120,9 @@ def main(args):
     if args.train_from != '':
         model.load_state_dict(torch.load(args.train_from))
         with torch.no_grad():
-            directed, undirected = model.test(test_deps, test_emb, verbose=False)
+            directed, undirected = model.test(test_deps, test_emb)
         print('acc on length <= 10: #trees %d, undir %2.1f, dir %2.1f' \
-              % (len(test_gold), 100 * undirected, 100 * directed))
+              % (len(test_deps), 100 * undirected, 100 * directed))
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
