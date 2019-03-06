@@ -202,8 +202,9 @@ def main(args):
                 (epoch, train_iter, accuracy, vm), file=sys.stderr)
             model.train()
 
+        torch.save(model.state_dict(), args.save_path)
+
     model.eval()
-    torch.save(model.state_dict(), args.save_path)
     with torch.no_grad():
         accuracy, vm = model.test(test_data, test_tags)
     print('\n complete training, accuracy %f, vm %f\n' % (accuracy, vm), file=sys.stderr)
