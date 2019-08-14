@@ -137,7 +137,7 @@ def main(args):
             accuracy, vm = model.test(test_data, test_tags, sentences=test_text,
                 tagging=True, path=args.tag_path, null_index=null_index)
         print('\n***** M1 %f, VM %f, max_var %.4f, min_var %.4f*****\n'
-              % (accuracy, vm, model.var.data.max(), model.var.data.min()), file=sys.stderr)
+              % (accuracy, vm, model.var.data.max(), model.var.data.min()))
         return
 
 
@@ -153,7 +153,7 @@ def main(args):
     with torch.no_grad():
         accuracy, vm = model.test(test_data, test_tags)
     print('\n*****starting M1 %f, VM %f, max_var %.4f, min_var %.4f*****\n'
-          % (accuracy, vm, model.var.data.max(), model.var.data.min()), file=sys.stderr)
+          % (accuracy, vm, model.var.data.max(), model.var.data.min()))
 
 
     model.train()
@@ -188,18 +188,18 @@ def main(args):
                 print('epoch %d, iter %d, log_likelihood %.2f, jacobian %.2f, obj %.2f, max_var %.4f ' \
                       'min_var %.4f time elapsed %.2f sec' % (epoch, train_iter, report_ll / report_num_words, \
                       report_jc / report_num_words, report_obj / report_num_words, model.var.max(), \
-                      model.var.min(), time.time() - begin_time), file=sys.stderr)
+                      model.var.min(), time.time() - begin_time))
 
         print('\nepoch %d, log_likelihood %.2f, jacobian %.2f, obj %.2f\n' % \
             (epoch, report_ll / report_num_words, report_jc / report_num_words,
-             report_obj / report_num_words), file=sys.stderr)
+             report_obj / report_num_words))
 
         if epoch % args.valid_nepoch == 0:
             model.eval()
             with torch.no_grad():
                 accuracy, vm = model.test(test_data, test_tags)
             print('\n*****epoch %d, iter %d, M1 %f, VM %f*****\n' %
-                (epoch, train_iter, accuracy, vm), file=sys.stderr)
+                (epoch, train_iter, accuracy, vm))
             model.train()
 
         torch.save(model.state_dict(), args.save_path)
@@ -207,7 +207,7 @@ def main(args):
     model.eval()
     with torch.no_grad():
         accuracy, vm = model.test(test_data, test_tags)
-    print('\n complete training, accuracy %f, vm %f\n' % (accuracy, vm), file=sys.stderr)
+    print('\n complete training, accuracy %f, vm %f\n' % (accuracy, vm))
 
 if __name__ == '__main__':
     parse_args = init_config()
