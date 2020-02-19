@@ -7,7 +7,7 @@ Junxian He, Graham Neubig, Taylor Berg-Kirkpatrick
 EMNLP 2018
 ```
 
-The code performs unsupervised structure learning with flow, specifically on Markov structure and dependency structure.
+The code performs unsupervised structure learning on language, specifically to learn Markov structure and dependency structure.
 
 Please concact junxianh@cs.cmu.edu if you have any questions.
 
